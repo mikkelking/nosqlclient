@@ -3,7 +3,7 @@
 set -e
 
   # download installer script
-  curl https://install.meteor.com -o /tmp/install_meteor.sh
+  curl https://install.meteor.com/?release=1.10.2 -o /tmp/install_meteor.sh
 
   # change tar command in the install script with bsdtar ( bsdtar -xf "$TARBALL_FILE" -C "$INSTALL_TMPDIR" )
   printf "\n[-] Changing tar with bsdtar...\n\n"

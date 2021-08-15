@@ -1,4 +1,4 @@
-FROM debian:jessie
+FROM debian:stretch
 
 RUN groupadd -r node -g 1000 && useradd -m -g node -u 1000 node
 

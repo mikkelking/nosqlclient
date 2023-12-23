@@ -1,8 +1,8 @@
-FROM debian:jessie
+FROM debian:stretch
 
 RUN groupadd -r node -g 1000 && useradd -m -g node -u 1000 node
 
-ENV NODE_VERSION 12.16.1
+ENV NODE_VERSION 12.22.5
 ENV GOSU_VERSION 1.10
 
 # default values for Meteor environment variables

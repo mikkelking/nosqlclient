@@ -19,6 +19,7 @@ meteor npm install
 # build the bundle
 printf "\n[-] Building Meteor application...\n\n"
 mkdir -p $APP_BUNDLE_DIR
+npm update
 meteor build --directory $APP_BUNDLE_DIR
 
 # run npm install in bundle

@@ -203,7 +203,7 @@ const getFindFinalObject = function (queryStr, cmbOptionsId) {
       if (exportFormat) {
         const selectedCollection = SessionManager.get(SessionManager.strSessionSelectedCollection);
         window.open(`export?format=${exportFormat}&
-    selectedCollection=${selectedCollection}&selector=${JSON.stringify(selector)}&cursorOptions=${JSON.stringify(cursorOptions)}&sessionId=${Meteor.default_connection._lastSessionId}`);
+    selectedCollection=${selectedCollection}&selector=${JSON.stringify(selector)}&cursorOptions=${JSON.stringify(cursorOptions)}&sessionId=${Meteor.default_connection?._lastSessionId}`);
         Notification.stop();
       } else {
         const args = { selector, cursorOptions };

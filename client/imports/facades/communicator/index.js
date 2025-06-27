@@ -90,7 +90,7 @@ Communicator.prototype = {
         delete args[key];
       }
     });
-    const finalArgs = Object.assign(Object.assign({ sessionId: Meteor.default_connection._lastSessionId }, this.methods[methodName]), args);
+    const finalArgs = Object.assign(Object.assign({ sessionId: Meteor.default_connection?._lastSessionId }, this.methods[methodName]), args);
     return Meteor.call(methodName, finalArgs, callback);
   },
 

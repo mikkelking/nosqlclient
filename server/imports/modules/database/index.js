@@ -1,4 +1,4 @@
-import * as collections from '/lib/imports/collections';
+import * as collections from "/lib/imports/collections";
 
 const Database = function Database() {
   this.types = {
@@ -8,38 +8,39 @@ const Database = function Database() {
     QueryHistory: collections.QueryHistory,
     SchemaAnalyzeResult: collections.SchemaAnalyzeResult,
     Settings: collections.Settings,
-    ShellCommands: collections.ShellCommands
+    ShellCommands: collections.ShellCommands,
   };
 };
 
 const resolveType = function (type) {
-  if (Object.prototype.toString.call(type) === '[object String]') return this.types[type];
+  if (Object.prototype.toString.call(type) === "[object String]")
+    return this.types[type];
   return type;
 };
 
 Database.prototype = {
-  create({ type, document }) {
-    return resolveType(type).insert(document);
+  async create({ type, document }) {
+    return await resolveType(type).insertAsync(document);
   },
 
   async read({ type, query, queryOptions = {} }) {
     return await resolveType(type).find(query, queryOptions).fetchAsync();
   },
 
-  readOne({ type, query, queryOptions = {} }) {
-    return resolveType(type).findOne(query, queryOptions);
+  async readOne({ type, query, queryOptions = {} }) {
+    return await resolveType(type).findOneAsync(query, queryOptions);
   },
 
   async count({ type, query, queryOptions = {} }) {
     return await resolveType(type).find(query, queryOptions).countAsync();
   },
 
-  update({ type, selector, modifier, options = {} }) {
-    return resolveType(type).update(selector, modifier, options);
+  async updateAsync({ type, selector, modifier, options = {} }) {
+    return await resolveType(type).updateAsync(selector, modifier, options);
   },
 
-  remove({ type, selector }) {
-    return resolveType(type).remove(selector);
+  async removeAsync({ type, selector }) {
+    return await resolveType(type).removeAsync(selector);
   },
 
   // aliases
@@ -49,7 +50,7 @@ Database.prototype = {
 
   find({ type, query, isSingle = false, queryOptions = {} }) {
     return this.read({ type, queryOptions, isSingle, query });
-  }
+  },
 };
 
 export default new Database();

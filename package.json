@@ -3,7 +3,7 @@
   "name": "mongoclient",
   "version": "4.0.1",
   "devDependencies": {
-    "chromedriver": "2.40.0",
+    "chromedriver": "^87.0.1",
     "cross-env": "5.2.0",
     "eslint": "5.9.0",
     "eslint-config-airbnb": "17.1.0",
@@ -45,10 +45,12 @@
     "mongodb-url": "3.0.3",
     "sinon": "7.2.7",
     "spin.js": "4.0.0",
+    "sshpk": "^1.18.0",
     "sweetalert": "1.0.1",
     "toastr": "2.1.4",
     "tunnel-ssh": "4.1.4",
     "url": "0.11.0",
+    "uuid": "^11.1.0",
     "winston": "3.1.0"
   },
   "scripts": {

@@ -33,7 +33,7 @@ To set an external mongodb which is required for meteor to work, you can set ```
 
 To persist your connections and settings simply bind ```/data/db``` directory to your local machine as below.
 
-```docker run -d -p 3000:3000 -v <your_path>:/data/db mongoclient/mongoclient```
+```docker run -d -p 3000:3000 -v <your_path>:/data/db mongoclient/mongoclient``` 
 
 
 ## History

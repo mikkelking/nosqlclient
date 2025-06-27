@@ -22,16 +22,16 @@ Database.prototype = {
     return resolveType(type).insert(document);
   },
 
-  read({ type, query, queryOptions = {} }) {
-    return resolveType(type).find(query, queryOptions).fetch();
+  async read({ type, query, queryOptions = {} }) {
+    return await resolveType(type).find(query, queryOptions).fetchAsync();
   },
 
   readOne({ type, query, queryOptions = {} }) {
     return resolveType(type).findOne(query, queryOptions);
   },
 
-  count({ type, query, queryOptions = {} }) {
-    return resolveType(type).find(query, queryOptions).count();
+  async count({ type, query, queryOptions = {} }) {
+    return await resolveType(type).find(query, queryOptions).countAsync();
   },
 
   update({ type, selector, modifier, options = {} }) {

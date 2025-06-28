@@ -3,52 +3,52 @@ Package.describe({
   summary: "A comprehensive internationalization solution for Meteor",
   version: "3.0.2",
   git: "https://github.com/TAPevents/tap-i18n",
-});
+})
 
-both = ["server", "client"];
-server = "server";
-client = "client";
+both = ["server", "client"]
+server = "server"
+client = "client"
 
 Package.onUse(function (api) {
-  api.versionsFrom("2.2.4");
+  api.versionsFrom("2.2.4")
 
-  api.use("coffeescript@2.4.1", both);
-  api.use("underscore@1.0.10", both);
-  api.use("isobuild:compiler-plugin@1.0.0", both);
+  api.use("coffeescript@2.4.1", both)
+  api.use("underscore@1.0.10", both)
+  api.use("isobuild:compiler-plugin@1.0.0", both)
 
-  api.use("raix:eventemitter@0.1.1", both);
-  api.use("meteorspark:util@0.2.0", both);
+  api.use("raix:eventemitter@0.1.1", both)
+  api.use("meteorspark:util@0.2.0", both)
 
-  api.use("tracker", both);
-  api.use("session", client);
-  api.use("jquery@1.0.10", client);
-  api.use("templating@1.4.0", client);
+  api.use("tracker", both)
+  api.use("session", client)
+  api.use("jquery@3.0.0", client)
+  api.use("templating@1.4.0", client)
 
-  api.use("webapp@2.0.0", server);
+  api.use("webapp@2.0.0", server)
 
   // load TAPi18n
-  api.addFiles("lib/globals.js", both);
+  api.addFiles("lib/globals.js", both)
 
   // load and init TAPi18next
-  api.addFiles("lib/tap_i18next/tap_i18next-1.7.3.js", both);
-  api.export("TAPi18next");
-  api.addFiles("lib/tap_i18next/tap_i18next_init.js", both);
+  api.addFiles("lib/tap_i18next/tap_i18next-1.7.3.js", both)
+  api.export("TAPi18next")
+  api.addFiles("lib/tap_i18next/tap_i18next_init.js", both)
 
-  api.addFiles("lib/tap_i18n/tap_i18n-helpers.coffee", both);
+  api.addFiles("lib/tap_i18n/tap_i18n-helpers.coffee", both)
 
   // We use the bare option since we need TAPi18n in the package level and
   // coffee adds vars to all (so without bare all vars are in the file level)
-  api.addFiles("lib/tap_i18n/tap_i18n-common.coffee", server);
-  api.addFiles("lib/tap_i18n/tap_i18n-common.coffee", client, { bare: true });
+  api.addFiles("lib/tap_i18n/tap_i18n-common.coffee", server)
+  api.addFiles("lib/tap_i18n/tap_i18n-common.coffee", client, { bare: true })
 
-  api.addFiles("lib/tap_i18n/tap_i18n-server.coffee", server);
-  api.addFiles("lib/tap_i18n/tap_i18n-client.coffee", client, { bare: true });
+  api.addFiles("lib/tap_i18n/tap_i18n-server.coffee", server)
+  api.addFiles("lib/tap_i18n/tap_i18n-client.coffee", client, { bare: true })
 
-  api.addFiles("lib/tap_i18n/tap_i18n-init.coffee", server);
-  api.addFiles("lib/tap_i18n/tap_i18n-init.coffee", client, { bare: true });
+  api.addFiles("lib/tap_i18n/tap_i18n-init.coffee", server)
+  api.addFiles("lib/tap_i18n/tap_i18n-init.coffee", client, { bare: true })
 
-  api.export("TAPi18n");
-});
+  api.export("TAPi18n")
+})
 
 Package.registerBuildPlugin({
   name: "tap-i18n-compiler",
@@ -78,4 +78,4 @@ Package.registerBuildPlugin({
     "lib/plugin/compilers/i18n.json.coffee",
     "lib/plugin/compilers/i18n.yml.coffee",
   ],
-});
+})

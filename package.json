@@ -57,6 +57,7 @@
     "build": "meteor build /tmp/nosqlclient",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
+    "debug": "echo '\n\n * * * STARTING NOSQLCLIENT * * * \n\n';DEBUG=app:* MONGO_URL=mongodb://localhost/nosql meteor --exclude-archs web.cordova,web.browser.legacy --inspect",
     "test": "cross-env TEST_BROWSER_DRIVER=chrome BABEL_ENV=coverage COVERAGE=1 COVERAGE_OUT_LCOVONLY=1 COVERAGE_APP_FOLDER=$PWD/ meteor test --once --driver-package meteortesting:mocha",
     "test:server": "cross-env TEST_CLIENT=0 meteor test --once --driver-package meteortesting:mocha",
     "test:client": "cross-env TEST_BROWSER_DRIVER=chrome TEST_SERVER=0 meteor test --once --driver-package meteortesting:mocha"

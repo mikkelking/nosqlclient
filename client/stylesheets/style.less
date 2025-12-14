@@ -5,7 +5,7 @@
  *   version 2.7.1
  *
 */
-
+@import "../plugins/colorpicker/css/bootstrap-colorpicker.min.css";
 // Variables, Mixins
 @import "globals/variables.import.less";
 @import "globals/mixins.import.less";
@@ -44,15 +44,15 @@
 // Your custom style to override base style
 @import "globals/custom.import.less";
 
-
-
 // Clear layout on print mode
 @media print {
   nav.navbar-static-side {
     display: none;
   }
 
-  body { overflow: visible !important; }
+  body {
+    overflow: visible !important;
+  }
 
   #page-wrapper {
     margin: 0;
@@ -61,5 +61,5 @@
 
 // Set height for main blaze element
 #__blaze-root {
-  height:100%
+  height: 100%;
 }

@@ -1,31 +1,42 @@
-/* global Async */
 import { Logger, Error } from '/server/imports/modules';
 import MongoDB from './index';
 
 const mongodbApi = require('mongodb');
 const { EJSON } = require('bson');
 
-const MongoDBGridFS = function () {
+const MongoDBGridFS = function () {};
+
+const buildSerializedResult = ({ result = null, error = null }) => {
+  const serialized = EJSON.serialize({ result, error });
+  serialized.err = serialized.error;
+  return serialized;
 };
 
-const tryDownloadingFile = function (sessionId, bucketName, fileId, res, metadataToLog) {
+const tryDownloadingFile = async function (sessionId, bucketName, fileId, res, metadataToLog) {
   try {
     const filesCollection = MongoDB.dbObjectsBySessionId[sessionId].db.collection(`${bucketName}.files`);
-    filesCollection.find({ _id: new mongodbApi.ObjectId(fileId) }).limit(1).next((err, doc) => {
-      if (doc) {
-        const bucket = new mongodbApi.GridFSBucket(MongoDB.dbObjectsBySessionId[sessionId].db, { bucketName });
-        const headers = {
-          'Content-type': 'application/octet-stream',
-          'Content-Disposition': `attachment; filename=${encodeURIComponent(doc.filename)}`,
-        };
-        const downloadStream = bucket.openDownloadStream(new mongodbApi.ObjectID(fileId));
-        res.writeHead(200, headers);
-        downloadStream.pipe(res);
-      } else {
-        res.writeHead(400);
-        res.end('File not found !');
-      }
-    });
+    const doc = await filesCollection.find({ _id: new mongodbApi.ObjectId(fileId) }).limit(1).next();
+
+    if (doc) {
+      const bucket = new mongodbApi.GridFSBucket(MongoDB.dbObjectsBySessionId[sessionId].db, { bucketName });
+      const headers = {
+        'Content-type': 'application/octet-stream',
+        'Content-Disposition': `attachment; filename=${encodeURIComponent(doc.filename)}`,
+      };
+      const downloadStream = bucket.openDownloadStream(new mongodbApi.ObjectID(fileId));
+      res.writeHead(200, headers);
+
+      downloadStream.on('error', (err) => {
+        Logger.error({ message: 'download-file-stream', metadataToLog: Object.assign({ err }, metadataToLog) });
+        if (!res.headersSent) res.writeHead(500);
+        res.end('Unexpected error while downloading file');
+      });
+
+      downloadStream.pipe(res);
+    } else {
+      res.writeHead(400);
+      res.end('File not found !');
+    }
   } catch (exception) {
     Logger.error({ message: 'download-file', metadataToLog: Object.assign({ exception }, metadataToLog) });
     res.writeHead(500);
@@ -34,143 +45,144 @@ const tryDownloadingFile = function (sessionId, bucketName, fileId, res, metadat
 };
 
 MongoDBGridFS.prototype = {
-  deleteFiles({ bucketName, selector, sessionId }) {
+  async deleteFiles({ bucketName, selector, sessionId }) {
     const metadataToLog = { bucketName, selector, sessionId };
     Logger.info({ message: 'delete-files', metadataToLog });
 
-    selector = EJSON.deserialize(selector);
+    try {
+      const parsedSelector = EJSON.deserialize(selector);
+      const filesCollection = MongoDB.dbObjectsBySessionId[sessionId].db.collection(`${bucketName}.files`);
+      const chunksCollection = MongoDB.dbObjectsBySessionId[sessionId].db.collection(`${bucketName}.chunks`);
 
-    const result = Async.runSync((done) => {
-      try {
-        const filesCollection = MongoDB.dbObjectsBySessionId[sessionId].db.collection(`${bucketName}.files`);
-        const chunksCollection = MongoDB.dbObjectsBySessionId[sessionId].db.collection(`${bucketName}.chunks`);
+      const docs = await filesCollection.find(parsedSelector, { projection: { _id: 1 } }).toArray();
+      const ids = docs.map((doc) => doc._id);
 
-        filesCollection.find(selector, { _id: 1 }).toArray((firstError, docs) => {
-          if (firstError) {
-            done(Error.createWithoutThrow({ type: Error.types.GridFSError, externalError: firstError, metadataToLog }), docs);
-            return;
-          }
+      metadataToLog.ids = ids;
 
-          const ids = [];
-          docs.forEach(obj => ids.push(obj._id));
+      Logger.info({ message: 'delete-from-files-collection', metadataToLog });
+      await filesCollection.deleteMany({ _id: { $in: ids } }, {});
 
-          metadataToLog.ids = ids;
+      Logger.info({ message: 'delete-from-chunks-collection', metadataToLog });
+      await chunksCollection.deleteMany({ files_id: { $in: ids } });
 
-          Logger.info({ message: 'delete-from-files-collection', metadataToLog });
-          filesCollection.deleteMany({ _id: { $in: ids } }, {}, (filesCollectionError) => {
-            if (filesCollectionError) {
-              done(Error.createWithoutThrow({ type: Error.types.GridFSError, externalError: filesCollectionError, metadataToLog }), null);
-              return;
-            }
-
-            Logger.info({ message: 'delete-from-chunks-collection', metadataToLog });
-            chunksCollection.deleteMany({ files_id: { $in: ids } }, (chunksCollectionError) => {
-              let errorToBeThrown = null;
-              if (chunksCollectionError) errorToBeThrown = Error.createWithoutThrow({ type: Error.types.GridFSError, externalError: chunksCollectionError, metadataToLog });
-              done(errorToBeThrown, null);
-            });
-          });
-        });
-      } catch (exception) {
-        done(Error.createWithoutThrow({ type: Error.types.GridFSError, formatters: ['delete-files'], metadataToLog, externalError: exception }), null);
-      }
-    });
-
-    return EJSON.serialize(result);
+      return buildSerializedResult({ result: null });
+    } catch (exception) {
+      const error = Error.createWithoutThrow({
+        type: Error.types.GridFSError,
+        formatters: ['delete-files'],
+        metadataToLog,
+        externalError: exception,
+      });
+      return buildSerializedResult({ error });
+    }
   },
 
-  deleteFile({ bucketName, fileId, sessionId }) {
+  async deleteFile({ bucketName, fileId, sessionId }) {
     const metadataToLog = { bucketName, fileId, sessionId };
     Logger.info({ message: 'delete-file', metadataToLog });
 
-    const result = Async.runSync((done) => {
-      try {
-        const bucket = new mongodbApi.GridFSBucket(MongoDB.dbObjectsBySessionId[sessionId].db, { bucketName });
-        bucket.delete(new mongodbApi.ObjectId(fileId), (err) => {
-          let errorToBeThrown = null;
-          if (err) errorToBeThrown = Error.createWithoutThrow({ type: Error.types.GridFSError, externalError: err, metadataToLog });
-          done(errorToBeThrown, null);
-        });
-      } catch (exception) {
-        done(Error.createWithoutThrow({ type: Error.types.GridFSError, formatters: ['delete-file'], metadataToLog, externalError: exception }), null);
-      }
-    });
-
-    return EJSON.serialize(result);
+    try {
+      const bucket = new mongodbApi.GridFSBucket(MongoDB.dbObjectsBySessionId[sessionId].db, { bucketName });
+      await bucket.delete(new mongodbApi.ObjectId(fileId));
+      return buildSerializedResult({ result: null });
+    } catch (exception) {
+      const error = Error.createWithoutThrow({
+        type: Error.types.GridFSError,
+        formatters: ['delete-file'],
+        metadataToLog,
+        externalError: exception,
+      });
+      return buildSerializedResult({ error });
+    }
   },
 
-  getFilesInfo({ bucketName, selector, limit, sessionId }) {
+  async getFilesInfo({ bucketName, selector, limit, sessionId }) {
     limit = parseInt(limit, 10) || 100;
     selector = selector || {};
 
     const metadataToLog = { bucketName, selector, limit, sessionId };
-    selector = EJSON.deserialize(selector);
 
     Logger.info({ message: 'get-files-info', metadataToLog });
 
-    const result = Async.runSync((done) => {
-      try {
-        const bucket = new mongodbApi.GridFSBucket(MongoDB.dbObjectsBySessionId[sessionId].db, { bucketName });
-        bucket.find(selector, { limit }).toArray((err, files) => {
-          let errorToBeThrown = null;
-          if (err) errorToBeThrown = Error.createWithoutThrow({ type: Error.types.GridFSError, externalError: err, metadataToLog });
-          done(errorToBeThrown, files);
-        });
-      } catch (exception) {
-        done(Error.createWithoutThrow({ type: Error.types.GridFSError, formatters: ['get-files-info'], metadataToLog, externalError: exception }), null);
-      }
-    });
-
-    return EJSON.serialize(result);
+    try {
+      const parsedSelector = EJSON.deserialize(selector);
+      const bucket = new mongodbApi.GridFSBucket(MongoDB.dbObjectsBySessionId[sessionId].db, { bucketName });
+      const files = await bucket.find(parsedSelector, { limit }).toArray();
+      return buildSerializedResult({ result: files });
+    } catch (exception) {
+      const error = Error.createWithoutThrow({
+        type: Error.types.GridFSError,
+        formatters: ['get-files-info'],
+        metadataToLog,
+        externalError: exception,
+      });
+      return buildSerializedResult({ error });
+    }
   },
 
-  uploadFile({ bucketName, blob, fileName, contentType, metaData, aliases, sessionId }) {
+  async uploadFile({ bucketName, blob, fileName, contentType, metaData, aliases, sessionId }) {
     const metadataToLog = { bucketName, fileName, contentType, metaData, aliases, sessionId, blobLength: blob.length };
 
     if (metaData) metaData = EJSON.deserialize(metaData);
 
-    blob = Buffer.from(blob);
+    const buffer = Buffer.from(blob);
 
     Logger.info({ message: 'upload-file', metadataToLog });
 
-    return Async.runSync((done) => {
-      try {
-        const bucket = new mongodbApi.GridFSBucket(MongoDB.dbObjectsBySessionId[sessionId].db, { bucketName });
+    try {
+      const bucket = new mongodbApi.GridFSBucket(MongoDB.dbObjectsBySessionId[sessionId].db, { bucketName });
+      await new Promise((resolve, reject) => {
         const uploadStream = bucket.openUploadStream(fileName, {
           metadata: metaData,
           contentType,
           aliases,
         });
-        uploadStream.end(blob);
-        uploadStream.once('finish', () => {
-          done(null, null);
-        });
-      } catch (exception) {
-        done(Error.createWithoutThrow({ type: Error.types.GridFSError, formatters: ['upload-file'], metadataToLog, externalError: exception }), null);
-      }
-    });
+        uploadStream.on('error', reject);
+        uploadStream.on('finish', resolve);
+        uploadStream.end(buffer);
+      });
+
+      return buildSerializedResult({ result: null });
+    } catch (exception) {
+      const error = Error.createWithoutThrow({
+        type: Error.types.GridFSError,
+        formatters: ['upload-file'],
+        metadataToLog,
+        externalError: exception,
+      });
+      return buildSerializedResult({ error });
+    }
   },
 
-  getFile({ bucketName, fileId, sessionId }) {
+  async getFile({ bucketName, fileId, sessionId }) {
     const metadataToLog = { bucketName, fileId, sessionId };
-    Logger.info({ meessage: 'get-file', metadataToLog });
+    Logger.info({ message: 'get-file', metadataToLog });
 
-    const result = Async.runSync((done) => {
-      try {
-        const filesCollection = MongoDB.dbObjectsBySessionId[sessionId].db.collection(`${bucketName}.files`);
-        filesCollection.find({ _id: new mongodbApi.ObjectId(fileId) }).limit(1).next((err, doc) => {
-          if (doc) done(null, doc);
-          else Error.create({ type: Error.types.GridFSError, externalError: 'no-file-found', metadataToLog });
+    try {
+      const filesCollection = MongoDB.dbObjectsBySessionId[sessionId].db.collection(`${bucketName}.files`);
+      const doc = await filesCollection.find({ _id: new mongodbApi.ObjectId(fileId) }).limit(1).next();
+      if (!doc) {
+        return buildSerializedResult({
+          error: Error.createWithoutThrow({
+            type: Error.types.GridFSError,
+            externalError: 'no-file-found',
+            metadataToLog,
+          }),
         });
-      } catch (exception) {
-        done(Error.createWithoutThrow({ type: Error.types.GridFSError, formatters: ['get-file'], metadataToLog, externalError: exception }), null);
       }
-    });
-
-    return EJSON.serialize(result);
+      return buildSerializedResult({ result: doc });
+    } catch (exception) {
+      const error = Error.createWithoutThrow({
+        type: Error.types.GridFSError,
+        formatters: ['get-file'],
+        metadataToLog,
+        externalError: exception,
+      });
+      return buildSerializedResult({ error });
+    }
   },
 
-  download({ req, res }) {
+  async download({ req, res }) {
     const urlParts = decodeURI(req.url).split('&');
     const fileId = urlParts[0].substr(urlParts[0].indexOf('=') + 1);
     const bucketName = urlParts[1].substr(urlParts[1].indexOf('=') + 1);
@@ -186,7 +198,7 @@ MongoDBGridFS.prototype = {
       return;
     }
 
-    tryDownloadingFile(sessionId, bucketName, fileId, res, metadataToLog);
+    await tryDownloadingFile(sessionId, bucketName, fileId, res, metadataToLog);
   }
 };
 

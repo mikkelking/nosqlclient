@@ -185,7 +185,7 @@ const getRoundedMilisecondsFromSeconds = function (sec) {
 };
 
 Connection.prototype = {
-  importConnections(file) {
+  async importConnections(file) {
     Logger.info({
       message: "import-mongoclient-connections",
       metadataToLog: { file },
@@ -196,12 +196,12 @@ Connection.prototype = {
       if (mongoclientData.connections) {
         for (let i = 0; i < mongoclientData.connections.length; i += 1) {
           delete mongoclientData.connections[i]._id;
-          Database.insert({
+          await Database.insert({
             type: Database.types.Connections,
             document: mongoclientData.connections[i],
           });
         }
-        this.migrateConnectionsIfExist();
+        await this.migrateConnectionsIfExist();
       }
     } catch (exception) {
       Error.create({
@@ -220,7 +220,10 @@ Connection.prototype = {
         selector: { _id: connection._id },
       });
 
-    Database.create({ type: Database.types.Connections, document: connection });
+    await Database.create({
+      type: Database.types.Connections,
+      document: connection,
+    });
   },
 
   checkAndClear(connection) {
@@ -288,11 +291,11 @@ Connection.prototype = {
   async migrateConnectionsIfExist() {
     Logger.info({ message: "migrate-connections" });
 
-    const settings = Database.readOne({
+    const settings = await Database.readOne({
       type: Database.types.Settings,
       query: {},
     });
-    if (settings.isMigrationDone) return;
+    if (settings && settings.isMigrationDone) return;
 
     const connectionsAfterMigration = [];
 
@@ -351,9 +354,12 @@ Connection.prototype = {
     });
 
     await Database.removeAsync({ type: Database.types.Connections });
-    connectionsAfterMigration.forEach((conn) =>
-      Database.create({ type: Database.types.Connections, document: conn })
-    );
+    for (let i = 0; i < connectionsAfterMigration.length; i += 1) {
+      await Database.create({
+        type: Database.types.Connections,
+        document: connectionsAfterMigration[i],
+      });
+    }
     await Database.updateAsync({
       type: Database.types.Settings,
       selector: {},
@@ -375,7 +381,7 @@ Connection.prototype = {
     connection.connectionName = DEFAULT_CONNECTION_NAME;
 
     // delete existing connection after we parsed the new one
-    const existingConnection = Database.readOne({
+    const existingConnection = await Database.readOne({
       type: Database.types.Connections,
       query: { connectionName: DEFAULT_CONNECTION_NAME },
     });
@@ -387,7 +393,10 @@ Connection.prototype = {
       connection._id = existingConnection._id;
     }
 
-    Database.create({ type: Database.types.Connections, document: connection });
+    await Database.create({
+      type: Database.types.Connections,
+      document: connection,
+    });
   },
 
   async savePredefinedConnections() {
@@ -412,7 +421,7 @@ Connection.prototype = {
         });
 
         // insert new connection URLs.
-        connections.forEach((connectionObj) => {
+        for (const connectionObj of connections) {
           Logger.info({
             message: "import-predefined-connection",
             metadataToLog: { connection: connectionObj },
@@ -421,11 +430,11 @@ Connection.prototype = {
           connection.url = connectionObj.url;
           connection.connectionName = connectionObj.name;
 
-          Database.create({
+          await Database.create({
             type: Database.types.Connections,
             document: connection,
           });
-        });
+        }
       }
     } catch (exception) {
       Logger.error({
@@ -435,7 +444,7 @@ Connection.prototype = {
     }
   },
 
-  getConnectionUrl(connection, username, password, addAuthSource, keepDB) {
+  async getConnectionUrl(connection, username, password, addAuthSource, keepDB) {
     if (connection.url) {
       if (username || password)
         ConnectionHelper.changeUsernameAndPasswordFromConnectionUrl(
@@ -451,10 +460,11 @@ Connection.prototype = {
       return connection.url;
     }
 
-    const settings = Database.readOne({
-      type: Database.types.Settings,
-      query: {},
-    });
+    const settings =
+      (await Database.readOne({
+        type: Database.types.Settings,
+        query: {},
+      })) || {};
 
     // url
     let connectionUrl = "mongodb://";

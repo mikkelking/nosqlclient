@@ -1,4 +1,3 @@
-/* global Async */
 import { Meteor } from 'meteor/meteor';
 import { Logger, Database, Error } from '/server/imports/modules';
 
@@ -6,36 +5,17 @@ const { EJSON } = require('bson');
 const os = require('os');
 const fs = require('fs');
 
-const MongoDBHelper = function () {
-};
+const MongoDBHelper = function () {};
 
 MongoDBHelper.prototype = {
-  proceedExecutionStepByStep(entry, last, done, execution, metadataToLog) {
-    Object.keys(entry).forEach((key) => {
-      if (last && key === Object.keys(entry)[Object.keys(entry).length - 1]) {
-        entry[key].push((err, docs) => {
-          let errorToBeThrown = null;
-          if (err) errorToBeThrown = Error.createWithoutThrow({ type: Error.types.QueryError, externalError: err, metadataToLog });
-          done(errorToBeThrown, docs);
-        });
-
-        execution[key](...entry[key]);
-      } else execution = execution[key](...entry[key]);
-    });
-
-    return execution;
-  },
-
   removeConnectionTopologyFromResult(obj) {
-    if (obj.result && (typeof obj.result === 'object')) {
-      if ('connection' in obj.result) {
-        delete obj.result.connection;
-      }
+    if (obj.result && typeof obj.result === 'object' && 'connection' in obj.result) {
+      delete obj.result.connection;
     }
   },
 
   removeCollectionTopologyFromResult(obj) {
-    if (obj.result && (typeof obj.result === 'object')) {
+    if (obj.result && typeof obj.result === 'object') {
       obj.result = {};
     }
   },
@@ -49,74 +29,67 @@ MongoDBHelper.prototype = {
     return result;
   },
 
-  keepDroppingCollections(collections, i, done) {
-    if (collections.length === 0 || i >= collections.length) {
-      done(null, {});
-      return;
-    }
-
-    if (!collections[i].collectionName.startsWith('system')) {
-      collections[i].drop().then(() => {
-        this.keepDroppingCollections(collections, i += 1, done);
-      });
-    } else {
-      this.keepDroppingCollections(collections, i += 1, done);
+  async keepDroppingCollections(collections) {
+    for (let i = 0; i < collections.length; i += 1) {
+      if (collections[i].collectionName.startsWith('system')) continue;
+      await collections[i].drop();
     }
   },
 
-  proceedMapReduceExecution({ execution, map, reduce, options, metadataToLog }) {
-    options = EJSON.deserialize(options);
+  async proceedMapReduceExecution({ execution, map, reduce, options, metadataToLog }) {
+    const deserializedOptions = EJSON.deserialize(options);
+    let error = null;
+    let result = null;
 
-    const result = Async.runSync((done) => {
-      try {
-        execution.mapReduce(map, reduce, options, (firstError, resultCollection) => {
-          if (firstError) {
-            done(Error.createWithoutThrow({ type: Error.types.QueryError, externalError: firstError, metadataToLog }), null);
-            return;
-          }
-          if ((typeof options.out) === 'string') {
-            resultCollection.find().toArray((err, finalResult) => {
-              let errorToBeThrown = null;
-              if (err) errorToBeThrown = Error.createWithoutThrow({ type: Error.types.QueryError, externalError: err, metadataToLog });
-              done(errorToBeThrown, finalResult);
-            });
-          } else {
-            done(null, resultCollection);
-          }
-        });
-      } catch (exception) {
-        done(Error.createWithoutThrow({ type: Error.types.QueryError, metadataToLog, externalError: exception }), null);
+    try {
+      const mapReduceResult = await execution.mapReduce(map, reduce, deserializedOptions);
+
+      if (typeof deserializedOptions.out === 'string') {
+        result = await mapReduceResult.find().toArray();
+      } else {
+        result = mapReduceResult;
       }
-    });
+    } catch (exception) {
+      error = Error.createWithoutThrow({ type: Error.types.QueryError, metadataToLog, externalError: exception });
+    }
 
-    return EJSON.serialize(result);
+    const serialized = EJSON.serialize({ result, error });
+    serialized.err = serialized.error;
+    return serialized;
   },
 
-  proceedExecutingQuery({ methodArray, execution, removeCollectionTopology, metadataToLog }) {
+  async proceedExecutingQuery({ methodArray, execution, removeCollectionTopology, metadataToLog }) {
     const start = new Date();
-    let result = Async.runSync((done) => {
-      try {
-        for (let i = 0; i < methodArray.length; i += 1) {
-          const last = (i === (methodArray.length - 1));
-          const entry = EJSON.deserialize(methodArray[i]);
+    let currentExecution = execution;
+    let error = null;
 
-          execution = this.proceedExecutionStepByStep(entry, last, done, execution, metadataToLog);
+    try {
+      for (let i = 0; i < methodArray.length; i += 1) {
+        const entry = EJSON.deserialize(methodArray[i]);
+        const keys = Object.keys(entry);
+        for (let j = 0; j < keys.length; j += 1) {
+          const key = keys[j];
+          const args = entry[key] || [];
+          const response = currentExecution[key](...args);
+          currentExecution = response instanceof Promise ? await response : response;
         }
-      } catch (exception) {
-        done(Error.createWithoutThrow({ type: Error.types.QueryError, metadataToLog, externalError: exception }), null);
       }
-    });
+    } catch (exception) {
+      currentExecution = null;
+      error = Error.createWithoutThrow({ type: Error.types.QueryError, metadataToLog, externalError: exception });
+    }
 
-    if (removeCollectionTopology) this.removeCollectionTopologyFromResult(result);
-    this.removeConnectionTopologyFromResult(result);
-    result = EJSON.serialize(result);
-    result.executionTime = new Date() - start;
+    const serialized = EJSON.serialize({ result: currentExecution, error });
+    if (removeCollectionTopology) this.removeCollectionTopologyFromResult(serialized);
+    this.removeConnectionTopologyFromResult(serialized);
+    serialized.executionTime = new Date() - start;
+    serialized.err = serialized.error;
 
-    return result;
+    return serialized;
   },
 
-  getProperBinary(binaryName) {
-    const settings = Database.readOne({ type: Database.types.Settings, query: {} });
+  async getProperBinary(binaryName) {
+    const settings = (await Database.readOne({ type: Database.types.Settings, query: {} })) || {};
     const errorMessage = `binary-${binaryName}-not-found`;
     if (settings.mongoBinaryPath) {
       const dir = `${settings.mongoBinaryPath.replace(/\\/g, '/')}/`;

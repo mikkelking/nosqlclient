@@ -15,35 +15,36 @@ const MongoDB = function () {
   this.tunnelsBySessionId = {}
 }
 
+const buildResult = ({ result = null, error = null }) => {
+  const payload = { result, error }
+  payload.err = error
+  return payload
+}
+
 const proceedConnectingMongodb = async function (
   dbName,
   sessionId,
   connectionUrl,
-  connectionOptions = {},
-  done
+  connectionOptions = {}
 ) {
-  const metadataToLog = { sessionId, connectionOptions }
+  const metadataToLog = {
+    sessionId,
+    connectionOptions: MongoDBHelper.clearConnectionOptionsForLog(
+      connectionOptions
+    ),
+  }
   const client = new MongoClient(connectionUrl, connectionOptions)
-  await client.connect()
-  console.log("Connected successfully to server")
-  const db = client.db(dbName)
   try {
+    await client.connect()
+    Logger.debug({ message: "mongo-connected", metadataToLog })
+
     this.dbObjectsBySessionId[sessionId] = {
       db: client.db(dbName),
       client,
     }
-    this.dbObjectsBySessionId[sessionId].db
+    const collections = await this.dbObjectsBySessionId[sessionId].db
       .listCollections()
-      .toArray((err, collections) => {
-        let errorToBeThrown = null
-        if (err)
-          errorToBeThrown = Error.createWithoutThrow({
-            type: Error.types.ConnectionError,
-            externalError: err,
-            metadataToLog,
-          })
-        done(errorToBeThrown, collections)
-      })
+      .toArray()
 
     Logger.info({
       message: "connect",
@@ -51,28 +52,34 @@ const proceedConnectingMongodb = async function (
         sessionLength: `${Object.keys(this.dbObjectsBySessionId).length}`,
       },
     })
+    return buildResult({ result: collections })
   } catch (exception) {
-    done(
-      Error.createWithoutThrow({
-        type: Error.types.ConnectionError,
-        metadataToLog,
-        externalError: exception,
-      }),
-      null
-    )
+    const error = Error.createWithoutThrow({
+      type: Error.types.ConnectionError,
+      metadataToLog,
+      externalError: exception,
+    })
 
-    if (client) client.close()
+    try {
+      await client.close()
+    } catch (closeError) {
+      Logger.error({
+        message: "mongo-client-close-error",
+        metadataToLog: { sessionId, closeError },
+      })
+    }
     if (this.tunnelsBySessionId[sessionId]) {
       this.tunnelsBySessionId[sessionId].close()
       this.tunnelsBySessionId[sessionId] = null
     }
+
+    return buildResult({ error })
   }
 }
 
 const connectThroughTunnel = function ({
   connection,
   sessionId,
-  done,
   connectionUrl,
   connectionOptions,
   username,
@@ -98,59 +105,83 @@ const connectThroughTunnel = function ({
     this.tunnelsBySessionId[sessionId].close()
 
   Logger.info({ message: "connect-ssh", metadataToLog: { sessionId, config } })
-  this.tunnelsBySessionId[sessionId] = tunnelSsh(
-    config,
-    Meteor.bindEnvironment((error) => {
-      if (error) {
-        done(
-          Error.createWithoutThrow({
-            type: Error.types.ConnectionError,
-            metadataToLog: { sessionId, connectionOptions, username },
-            externalError: error,
-          }),
-          null
-        )
-        return
+  return new Promise((resolve) => {
+    let settled = false
+    const metadataToLog = {
+      sessionId,
+      connectionOptions: MongoDBHelper.clearConnectionOptionsForLog(
+        connectionOptions
+      ),
+      username,
+    }
+    const settle = (payload, closeTunnelOnError = false) => {
+      if (settled) return
+      settled = true
+      if (closeTunnelOnError && this.tunnelsBySessionId[sessionId]) {
+        this.tunnelsBySessionId[sessionId].close()
+        this.tunnelsBySessionId[sessionId] = null
       }
-      proceedConnectingMongodb.call(
-        this,
-        connection.databaseName,
-        sessionId,
-        connectionUrl,
-        connectionOptions,
-        done
-      )
+      resolve(payload)
+    }
 
-      MongoDBShell.connectToShell({
-        connectionId: connection._id,
-        username,
-        password,
-        sessionId,
+    this.tunnelsBySessionId[sessionId] = tunnelSsh(
+      config,
+      Meteor.bindEnvironment(async (error) => {
+        if (error) {
+          const err = Error.createWithoutThrow({
+            type: Error.types.ConnectionError,
+            metadataToLog,
+            externalError: error,
+          })
+          settle(buildResult({ error: err }), true)
+          return
+        }
+
+        try {
+          const result = await proceedConnectingMongodb.call(
+            this,
+            connection.databaseName,
+            sessionId,
+            connectionUrl,
+            connectionOptions
+          )
+          if (result.error) {
+            settle(result, true)
+            return
+          }
+
+          await MongoDBShell.connectToShell({
+            connectionId: connection._id,
+            username,
+            password,
+            sessionId,
+          })
+          settle(result)
+        } catch (exception) {
+          const err = Error.createWithoutThrow({
+            type: Error.types.ConnectionError,
+            metadataToLog,
+            externalError: exception,
+          })
+          settle(buildResult({ error: err }), true)
+        }
       })
-    })
-  )
+    )
 
-  this.tunnelsBySessionId[sessionId].on("error", (err) => {
-    if (err) {
-      done(
-        Error.createWithoutThrow({
-          type: Error.types.ConnectionError,
-          metadataToLog: { sessionId, connectionOptions, username },
-          externalError: err,
-        }),
-        null
-      )
-    }
-    if (this.tunnelsBySessionId[sessionId]) {
-      this.tunnelsBySessionId[sessionId].close()
-      this.tunnelsBySessionId[sessionId] = null
-    }
+    this.tunnelsBySessionId[sessionId].on("error", (err) => {
+      const error = Error.createWithoutThrow({
+        type: Error.types.ConnectionError,
+        metadataToLog,
+        externalError: err,
+      })
+      settle(buildResult({ error }), true)
+    })
   })
 }
 
-const checkConnectionIsAlive = function (sessionId, metadataToLog) {
+const checkConnectionIsAlive = async function (sessionId, metadataToLog) {
   if (!this.dbObjectsBySessionId[sessionId]) {
-    this.disconnect({ sessionId })
+    await this.disconnect({ sessionId })
     Error.create({
       type: Error.types.ConnectionError,
       externalError: "connection-closed",
@@ -160,21 +191,21 @@ const checkConnectionIsAlive = function (sessionId, metadataToLog) {
 }
 
 MongoDB.prototype = {
-  executeClientMethod({ dbName, methodArray, sessionId }) {
+  async executeClientMethod({ dbName, methodArray, sessionId }) {
     const metadataToLog = { methodArray, dbName, sessionId }
     Logger.info({ message: "client-query-execution", metadataToLog })
 
-    checkConnectionIsAlive.call(this, sessionId, metadataToLog)
+    await checkConnectionIsAlive.call(this, sessionId, metadataToLog)
 
     const execution = this.dbObjectsBySessionId[sessionId].client.db(dbName)
-    return MongoDBHelper.proceedExecutingQuery({
+    return await MongoDBHelper.proceedExecutingQuery({
       methodArray,
       execution,
       metadataToLog,
     })
   },
 
-  execute({
+  async execute({
     selectedCollection,
     methodArray,
     sessionId,
@@ -183,11 +214,11 @@ MongoDB.prototype = {
     const metadataToLog = { methodArray, selectedCollection, sessionId }
     Logger.info({ message: "collection-query-execution", metadataToLog })
 
-    checkConnectionIsAlive.call(this, sessionId, metadataToLog)
+    await checkConnectionIsAlive.call(this, sessionId, metadataToLog)
 
     const execution =
       this.dbObjectsBySessionId[sessionId].db.collection(selectedCollection)
-    return MongoDBHelper.proceedExecutingQuery({
+    return await MongoDBHelper.proceedExecutingQuery({
       methodArray,
       execution,
       removeCollectionTopology,
@@ -195,7 +226,7 @@ MongoDB.prototype = {
     })
   },
 
-  executeAdmin({
+  async executeAdmin({
     methodArray,
     runOnAdminDB,
     sessionId,
@@ -204,12 +235,12 @@ MongoDB.prototype = {
     const metadataToLog = { methodArray, runOnAdminDB, sessionId }
     Logger.info({ message: "admin-query-execution", metadataToLog })
 
-    checkConnectionIsAlive.call(this, sessionId, metadataToLog)
+    await checkConnectionIsAlive.call(this, sessionId, metadataToLog)
 
     const execution = runOnAdminDB
       ? this.dbObjectsBySessionId[sessionId].db.admin()
       : this.dbObjectsBySessionId[sessionId].db
-    return MongoDBHelper.proceedExecutingQuery({
+    return await MongoDBHelper.proceedExecutingQuery({
       methodArray,
       execution,
       removeCollectionTopology,
@@ -217,7 +248,13 @@ MongoDB.prototype = {
     })
   },
 
-  executeMapReduce({ selectedCollection, map, reduce, options, sessionId }) {
+  async executeMapReduce({
+    selectedCollection,
+    map,
+    reduce,
+    options,
+    sessionId,
+  }) {
     const metadataToLog = {
       selectedCollection,
       map,
@@ -227,11 +264,11 @@ MongoDB.prototype = {
     }
     Logger.info({ message: "mapreduce-query-execution", metadataToLog })
 
-    checkConnectionIsAlive.call(this, sessionId, metadataToLog)
+    await checkConnectionIsAlive.call(this, sessionId, metadataToLog)
 
     const execution =
       this.dbObjectsBySessionId[sessionId].db.collection(selectedCollection)
-    return MongoDBHelper.proceedMapReduceExecution({
+    return await MongoDBHelper.proceedMapReduceExecution({
       execution,
       map,
       reduce,
@@ -240,12 +277,12 @@ MongoDB.prototype = {
     })
   },
 
-  connect({ connectionId, username, password, sessionId }) {
-    const connection = Database.readOne({
+  async connect({ connectionId, username, password, sessionId }) {
+    const connection = await Database.readOne({
       type: Database.types.Connections,
       query: { _id: connectionId },
     })
-    const connectionUrl = Connection.getConnectionUrl(
+    const connectionUrl = await Connection.getConnectionUrl(
       connection,
       username,
       password
@@ -259,58 +296,56 @@ MongoDB.prototype = {
 
     Logger.debug({ message: "connect", metadataToLog })
 
-    return Async.runSync((done) => {
-      try {
-        if (connection.ssh && connection.ssh.enabled)
-          connectThroughTunnel.call(this, {
-            connection,
-            sessionId,
-            done,
-            connectionUrl,
-            connectionOptions,
-            username,
-            password,
-          })
-        else
-          proceedConnectingMongodb.call(
-            this,
-            connection.databaseName,
-            sessionId,
-            connectionUrl,
-            connectionOptions,
-            done
-          )
-      } catch (exception) {
-        done(
-          Error.createWithoutThrow({
-            type: Error.types.ConnectionError,
-            metadataToLog,
-            externalError: exception,
-          }),
-          null
-        )
+    try {
+      if (connection.ssh && connection.ssh.enabled) {
+        return await connectThroughTunnel.call(this, {
+          connection,
+          sessionId,
+          connectionUrl,
+          connectionOptions,
+          username,
+          password,
+        })
       }
-    })
+
+      return await proceedConnectingMongodb.call(
+        this,
+        connection.databaseName,
+        sessionId,
+        connectionUrl,
+        connectionOptions
+      )
+    } catch (exception) {
+      return buildResult({
+        error: Error.createWithoutThrow({
+          type: Error.types.ConnectionError,
+          metadataToLog,
+          externalError: exception,
+        }),
+      })
+    }
   },
 
   async disconnect({ sessionId }) {
     Logger.info({ message: "disconnect", metadataToLog: sessionId })
 
-    if (
-      this.dbObjectsBySessionId[sessionId] &&
-      this.dbObjectsBySessionId[sessionId].client
-    ) {
-      this.dbObjectsBySessionId[sessionId].client.close().then(
-        () => {
-          delete this.dbObjectsBySessionId[sessionId]
-        },
-        (error) => {
-          Logger.error({
-            message: "disconnect-error",
-            metadataToLog: { sessionId, error },
-          })
-        }
-      )
+    const dbObject = this.dbObjectsBySessionId[sessionId]
+    if (dbObject && dbObject.client) {
+      try {
+        await dbObject.client.close()
+      } catch (error) {
+        Logger.error({
+          message: "disconnect-error",
+          metadataToLog: { sessionId, error },
+        })
+      } finally {
+        delete this.dbObjectsBySessionId[sessionId]
+      }
+    }
+
+    if (this.tunnelsBySessionId[sessionId]) {
+      this.tunnelsBySessionId[sessionId].close()
+      delete this.tunnelsBySessionId[sessionId]
     }
 
     if (MongoDBShell.spawnedShellsBySessionId[sessionId]) {
@@ -329,41 +364,36 @@ MongoDB.prototype = {
     await Database.removeAsync({ type: Database.types.Dumps, selector: {} })
   },
 
-  dropAllCollections({ sessionId }) {
+  async dropAllCollections({ sessionId }) {
     Logger.info({
       message: "drop-all-collections",
       metadataToLog: { sessionId },
     })
 
-    checkConnectionIsAlive.call(this, sessionId, { sessionId })
+    await checkConnectionIsAlive.call(this, sessionId, { sessionId })
 
-    return Async.runSync((done) => {
-      try {
-        this.dbObjectsBySessionId[sessionId].db.collections(
-          (err, collections) => {
-            MongoDBHelper.keepDroppingCollections(collections, 0, done)
-          }
-        )
-      } catch (exception) {
-        done(
-          Error.createWithoutThrow({
-            type: Error.types.QueryError,
-            message: "drop-all-collections-error",
-            metadataToLog: { sessionId },
-            externalError: exception,
-          }),
-          null
-        )
-      }
-    })
+    try {
+      const collections = await this.dbObjectsBySessionId[sessionId].db.collections()
+      await MongoDBHelper.keepDroppingCollections(collections)
+      return buildResult({ result: {} })
+    } catch (exception) {
+      return buildResult({
+        error: Error.createWithoutThrow({
+          type: Error.types.QueryError,
+          message: "drop-all-collections-error",
+          metadataToLog: { sessionId },
+          externalError: exception,
+        }),
+      })
+    }
   },
 
-  analyzeSchema({ connectionId, username, password, collection, sessionId }) {
-    const connection = Database.readOne({
+  async analyzeSchema({ connectionId, username, password, collection, sessionId }) {
+    const connection = await Database.readOne({
       type: Database.types.Connections,
       query: { _id: connectionId },
     })
-    const connectionUrl = Connection.getConnectionUrl(
+    const connectionUrl = await Connection.getConnectionUrl(
       connection,
       username,
       password,
@@ -381,12 +411,12 @@ MongoDB.prototype = {
 
     Logger.debug({ message: "analyze-schema", metadataToLog })
     try {
-      const mongoPath = MongoDBHelper.getProperBinary("mongo")
+      const mongoPath = await MongoDBHelper.getProperBinary("mongo")
       const spawned = spawn(mongoPath, args)
       let message = ""
       spawned.stdout.on(
         "data",
-        Meteor.bindEnvironment((data) => {
+        Meteor.bindEnvironment(async (data) => {
           if (data.toString()) {
             message += data.toString()
           }
@@ -395,33 +425,47 @@ MongoDB.prototype = {
 
       spawned.stderr.on(
         "data",
-        Meteor.bindEnvironment((data) => {
+        Meteor.bindEnvironment(async (data) => {
           if (data.toString()) {
-            Database.create({
-              type: Database.types.SchemaAnalyzeResult,
-              document: {
-                date: Date.now(),
-                sessionId,
-                connectionId,
-                message: data.toString(),
-              },
-            })
+            try {
+              await Database.create({
+                type: Database.types.SchemaAnalyzeResult,
+                document: {
+                  date: Date.now(),
+                  sessionId,
+                  connectionId,
+                  message: data.toString(),
+                },
+              })
+            } catch (error) {
+              Logger.error({
+                message: "analyze-schema-log-error",
+                metadataToLog: { sessionId, connectionId, error },
+              })
+            }
           }
         })
       )
 
       spawned.on(
         "close",
-        Meteor.bindEnvironment(() => {
-          Database.create({
-            type: Database.types.SchemaAnalyzeResult,
-            document: {
-              date: Date.now(),
-              sessionId,
-              connectionId,
-              message,
-            },
-          })
+        Meteor.bindEnvironment(async () => {
+          try {
+            await Database.create({
+              type: Database.types.SchemaAnalyzeResult,
+              document: {
+                date: Date.now(),
+                sessionId,
+                connectionId,
+                message,
+              },
+            })
+          } catch (error) {
+            Logger.error({
+              message: "analyze-schema-log-error",
+              metadataToLog: { sessionId, connectionId, error },
+            })
+          }
         })
       )
 

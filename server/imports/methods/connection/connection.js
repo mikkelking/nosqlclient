@@ -2,15 +2,15 @@ import { Meteor } from "meteor/meteor";
 import { Connection } from "/server/imports/core";
 
 Meteor.methods({
-  saveConnection({ connection }) {
-    Connection.save(connection);
+  async saveConnection({ connection }) {
+    await Connection.save(connection);
   },
 
-  checkAndSaveConnection({ connection }) {
+  async checkAndSaveConnection({ connection }) {
     Connection.checkAndClear(connection);
     connection.databaseName = connection.databaseName || "admin";
 
-    Connection.save(connection);
+    await Connection.save(connection);
   },
 
   parseUrl({ connection }) {
@@ -18,6 +18,6 @@ Meteor.methods({
   },
 
   async removeConnection({ connectionId }) {
-    await Connection.removeAsync(connectionId);
+    await Connection.remove(connectionId);
   },
 });

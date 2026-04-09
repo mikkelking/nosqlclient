@@ -2,7 +2,7 @@ import { Meteor } from 'meteor/meteor';
 import { WebApp } from 'meteor/webapp';
 import { Connection, Settings } from '/server/imports/core/index';
 
-Meteor.startup(() => {
+Meteor.startup(async () => {
   if (process.env.MONGOCLIENT_AUTH === 'true') {
     // Add handler
     WebApp.connectHandlers.use((req, res, next) => {
@@ -26,9 +26,9 @@ Meteor.startup(() => {
     stack.unshift(stack.pop());
   }
 
-  Settings.clearMongoclientData();
-  Settings.insertDefault();
-  Connection.migrateConnectionsIfExist();
-  Connection.tryInjectDefaultConnection();
-  Connection.savePredefinedConnections();
+  await Settings.clearMongoclientData();
+  await Settings.insertDefault();
+  await Connection.migrateConnectionsIfExist();
+  await Connection.tryInjectDefaultConnection();
+  await Connection.savePredefinedConnections();
 });

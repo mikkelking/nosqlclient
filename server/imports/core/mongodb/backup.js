@@ -6,60 +6,83 @@ const spawn = require("cross-spawn");
 
 const Backup = function () {};
 
-const executeBinary = function (args, sessionId, binaryName) {
-  const binaryPath = MongoDBHelper.getProperBinary(binaryName);
-  const metadataToLog = { args, sessionId, binaryPath };
-  Logger.info({ message: `${binaryName}`, metadataToLog });
+const executeBinary = async function (args, sessionId, binaryName) {
+  const metadataToLog = { args, sessionId, binary: binaryName };
 
   try {
+    const binaryPath = await MongoDBHelper.getProperBinary(binaryName);
+    metadataToLog.binaryPath = binaryPath;
+    Logger.info({ message: `${binaryName}`, metadataToLog });
+
     const spawned = spawn(binaryPath, args);
     spawned.stdout.on(
       "data",
-      Meteor.bindEnvironment((data) => {
+      Meteor.bindEnvironment(async (data) => {
         if (data.toString()) {
-          Database.create({
-            type: Database.types.Dumps,
-            document: {
-              date: Date.now(),
-              sessionId,
-              binary: binaryName,
-              message: data.toString(),
-            },
-          });
+          try {
+            await Database.create({
+              type: Database.types.Dumps,
+              document: {
+                date: Date.now(),
+                sessionId,
+                binary: binaryName,
+                message: data.toString(),
+              },
+            });
+          } catch (error) {
+            Logger.error({
+              message: "backup-log-error",
+              metadataToLog: { sessionId, binaryName, error },
+            });
+          }
         }
       })
     );
 
     spawned.stderr.on(
       "data",
-      Meteor.bindEnvironment((data) => {
+      Meteor.bindEnvironment(async (data) => {
         if (data.toString()) {
-          Database.create({
-            type: Database.types.Dumps,
-            document: {
-              date: Date.now(),
-              sessionId,
-              binary: binaryName,
-              message: data.toString(),
-              error: true,
-            },
-          });
+          try {
+            await Database.create({
+              type: Database.types.Dumps,
+              document: {
+                date: Date.now(),
+                sessionId,
+                binary: binaryName,
+                message: data.toString(),
+                error: true,
+              },
+            });
+          } catch (error) {
+            Logger.error({
+              message: "backup-log-error",
+              metadataToLog: { sessionId, binaryName, error },
+            });
+          }
         }
       })
     );
 
     spawned.on(
       "close",
-      Meteor.bindEnvironment(() => {
-        Database.create({
-          type: Database.types.Dumps,
-          document: {
-            date: Date.now(),
-            sessionId,
-            binary: binaryName,
-            message: "CLOSED",
-          },
-        });
+      Meteor.bindEnvironment(async () => {
+        try {
+          await Database.create({
+            type: Database.types.Dumps,
+            document: {
+              date: Date.now(),
+              sessionId,
+              binary: binaryName,
+              message: "CLOSED",
+            },
+          });
+        } catch (error) {
+          Logger.error({
+            message: "backup-log-error",
+            metadataToLog: { sessionId, binaryName, error },
+          });
+        }
       })
     );
 
@@ -75,20 +98,20 @@ const executeBinary = function (args, sessionId, binaryName) {
 };
 
 Backup.prototype = {
-  mongodump({ args, sessionId }) {
-    executeBinary(args, sessionId, "mongodump");
+  async mongodump({ args, sessionId }) {
+    await executeBinary(args, sessionId, "mongodump");
   },
 
-  mongorestore({ args, sessionId }) {
-    executeBinary(args, sessionId, "mongorestore");
+  async mongorestore({ args, sessionId }) {
+    await executeBinary(args, sessionId, "mongorestore");
   },
 
-  mongoexport({ args, sessionId }) {
-    executeBinary(args, sessionId, "mongoexport");
+  async mongoexport({ args, sessionId }) {
+    await executeBinary(args, sessionId, "mongoexport");
   },
 
-  mongoimport({ args, sessionId }) {
-    executeBinary(args, sessionId, "mongoimport");
+  async mongoimport({ args, sessionId }) {
+    await executeBinary(args, sessionId, "mongoimport");
   },
 
   async removeDumpLogs({ sessionId, binary }) {

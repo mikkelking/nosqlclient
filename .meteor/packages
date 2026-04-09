@@ -25,7 +25,7 @@ ecmascript # @0.16.8 # uinEnable ECMAScript2015+ syntax in app code
 
  okgrow:router-autoscroll
 
-# less@2.8.0
+less
 
 http
 

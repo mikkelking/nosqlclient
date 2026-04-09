@@ -2,28 +2,28 @@ import { Meteor } from 'meteor/meteor';
 import { Settings, Connection } from '/server/imports/core';
 
 Meteor.methods({
-  handleSubscriber({ email }) {
-    Settings.subscribe(email);
+  async handleSubscriber({ email }) {
+    await Settings.subscribe(email);
   },
 
   checkMongoclientVersion() {
-    Settings.checkMongoclientVersion();
+    return Settings.checkMongoclientVersion();
   },
 
-  updateSettings({ settings }) {
-    Settings.updateSettings(settings);
+  async updateSettings({ settings }) {
+    await Settings.updateSettings(settings);
   },
 
-  importMongoclient({ file }) {
-    Settings.importSettings(file);
-    Connection.importConnections(file);
+  async importMongoclient({ file }) {
+    await Settings.importSettings(file);
+    await Connection.importConnections(file);
   },
 
-  saveQueryHistory({ history }) {
-    Settings.saveQueryHistory(history);
+  async saveQueryHistory({ history }) {
+    await Settings.saveQueryHistory(history);
   },
 
-  removeSchemaAnalyzeResult({ sessionId }) {
-    Settings.removeSchemaAnalyzeResult({ sessionId });
+  async removeSchemaAnalyzeResult({ sessionId }) {
+    await Settings.removeSchemaAnalyzeResult({ sessionId });
   }
 });

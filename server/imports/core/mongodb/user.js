@@ -28,7 +28,7 @@ const load = (url) => cheerio.load(HTTP.get(url).content);
 
 MongoDBUser.prototype = {
   async getAllActions() {
-    const action = Database.readOne({
+    const action = await Database.readOne({
       type: Database.types.Actions,
       query: {},
     });

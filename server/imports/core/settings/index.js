@@ -8,9 +8,9 @@ const packageJson = require("/package.json");
 const Settings = function () {};
 
 Settings.prototype = {
-  read() {
+  async read() {
     Logger.info({ message: "read-settings" });
-    return Database.readOne({ type: Database.types.Settings, query: {} });
+    return await Database.readOne({ type: Database.types.Settings, query: {} });
   },
 
   async importSettings(file) {
@@ -27,7 +27,7 @@ Settings.prototype = {
           selector: {},
         });
         delete mongoclientData.settings._id;
-        Database.create({
+        await Database.create({
           type: Database.types.Settings,
           document: mongoclientData.settings,
         });
@@ -41,13 +41,13 @@ Settings.prototype = {
     }
   },
 
-  exportSettings({ res }) {
+  async exportSettings({ res }) {
     const fileContent = {};
-    fileContent.settings = Database.readOne({
+    fileContent.settings = await Database.readOne({
       type: Database.types.Settings,
       query: {},
     });
-    fileContent.connections = Database.read({
+    fileContent.connections = await Database.read({
       type: Database.types.Connections,
       query: {},
     });
@@ -66,11 +66,16 @@ Settings.prototype = {
     res.end(JSON.stringify(fileContent));
   },
 
-  insertDefault() {
+  async insertDefault() {
     Logger.info({ message: "insert-default-settings" });
 
-    if (!Database.readOne({ type: Database.types.Settings, query: {} })) {
-      Database.create({
+    const existing = await Database.readOne({
+      type: Database.types.Settings,
+      query: {},
+    });
+
+    if (!existing) {
+      await Database.create({
         type: Database.types.Settings,
         document: {
           scale: "MegaBytes",
@@ -100,7 +105,7 @@ Settings.prototype = {
     });
   },
 
-  subscribe(email) {
+  async subscribe(email) {
     Logger.info({ message: "subscribe", metadataToLog: { email } });
 
     const regex =
@@ -112,31 +117,28 @@ Settings.prototype = {
         metadataToLog: { email },
       });
 
-    return mailchimpAPI
-      .setApiKey("96b3d560f7ce4cdf78a65383375ee73b-us15")
-      .addANewListMember({
-        list_id: "ff8b28a54d",
-        body: {
-          email_address: email,
-          status: "subscribed",
+    try {
+      await mailchimpAPI
+        .setApiKey("96b3d560f7ce4cdf78a65383375ee73b-us15")
+        .addANewListMember({
+          list_id: "ff8b28a54d",
+          body: {
+            email_address: email,
+            status: "subscribed",
+          },
+        });
+      await this.setSubscribed();
+    } catch (reason) {
+      const externalError = JSON.parse(reason.response.content).title;
+      Error.create({
+        type: Error.types.SubscriptionError,
+        externalError,
+        metadataToLog: {
+          statusCode: reason.response.statusCode,
+          title: externalError,
         },
-      })
-      .then(
-        () => {
-          this.setSubscribed();
-        },
-        (reason) => {
-          const externalError = JSON.parse(reason.response.content).title;
-          Error.create({
-            type: Error.types.SubscriptionError,
-            externalError,
-            metadataToLog: {
-              statusCode: reason.response.statusCode,
-              title: externalError,
-            },
-          });
-        }
-      );
+      });
+    }
   },
 
   checkMongoclientVersion() {
@@ -170,7 +172,10 @@ Settings.prototype = {
         type: Database.types.Settings,
         selector: {},
       });
-      Database.create({ type: Database.types.Settings, document: settings });
+      await Database.create({
+        type: Database.types.Settings,
+        document: settings,
+      });
     } catch (ex) {
       Error.create({
         type: Error.types.InternalError,
@@ -182,7 +187,7 @@ Settings.prototype = {
 
   async saveQueryHistory(history) {
     Logger.info({ message: "save-query-history", metadataToLog: history });
-    const queryHistoryCount = Database.count({
+    const queryHistoryCount = await Database.count({
       type: Database.types.QueryHistory,
       query: {
         connectionId: history.connectionId,
@@ -191,19 +196,21 @@ Settings.prototype = {
     });
 
     if (queryHistoryCount >= 50) {
+      const oldest = await Database.readOne({
+        type: Database.types.QueryHistory,
+        query: {},
+        queryOptions: { sort: { data: 1 } },
+      });
       await Database.removeAsync({
         type: Database.types.QueryHistory,
-        selector: {
-          _id: Database.readOne({
-            type: Database.types.QueryHistory,
-            query: {},
-            queryOptions: { sort: { data: 1 } },
-          }),
-        },
+        selector: oldest ? { _id: oldest._id } : {},
       });
     }
 
-    Database.create({ type: Database.types.QueryHistory, document: history });
+    await Database.create({
+      type: Database.types.QueryHistory,
+      document: history,
+    });
   },
 
   async removeSchemaAnalyzeResult({ sessionId }) {

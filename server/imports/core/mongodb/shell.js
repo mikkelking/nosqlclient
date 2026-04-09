@@ -19,73 +19,101 @@ const setEventsToShell = function (connectionId, sessionId) {
 
   this.spawnedShellsBySessionId[sessionId].on(
     "error",
-    Meteor.bindEnvironment((error) => {
+    Meteor.bindEnvironment(async (error) => {
       Logger.error({
         message: "shell-event-bind",
         metadataToLog: { error, sessionId },
       });
       this.spawnedShellsBySessionId[sessionId] = null;
       if (error) {
-        Database.create({
-          type: Database.types.ShellCommands,
-          document: {
-            date: Date.now(),
-            sessionId,
-            connectionId,
-            message: `unexpected error ${error.message}`,
-          },
-        });
+        try {
+          await Database.create({
+            type: Database.types.ShellCommands,
+            document: {
+              date: Date.now(),
+              sessionId,
+              connectionId,
+              message: `unexpected error ${error.message}`,
+            },
+          });
+        } catch (dbError) {
+          Logger.error({
+            message: "shell-event-logging-error",
+            metadataToLog: { sessionId, dbError },
+          });
+        }
       }
     })
   );
 
   this.spawnedShellsBySessionId[sessionId].stdout.on(
     "data",
-    Meteor.bindEnvironment((data) => {
+    Meteor.bindEnvironment(async (data) => {
       if (data && data.toString()) {
-        Database.create({
-          type: Database.types.ShellCommands,
-          document: {
-            date: Date.now(),
-            sessionId,
-            connectionId,
-            message: data.toString(),
-          },
-        });
+        try {
+          await Database.create({
+            type: Database.types.ShellCommands,
+            document: {
+              date: Date.now(),
+              sessionId,
+              connectionId,
+              message: data.toString(),
+            },
+          });
+        } catch (dbError) {
+          Logger.error({
+            message: "shell-event-logging-error",
+            metadataToLog: { sessionId, dbError },
+          });
+        }
       }
     })
   );
 
   this.spawnedShellsBySessionId[sessionId].stderr.on(
     "data",
-    Meteor.bindEnvironment((data) => {
+    Meteor.bindEnvironment(async (data) => {
       if (data && data.toString()) {
-        Database.create({
-          type: Database.types.ShellCommands,
-          document: {
-            date: Date.now(),
-            sessionId,
-            connectionId,
-            message: data.toString(),
-          },
-        });
+        try {
+          await Database.create({
+            type: Database.types.ShellCommands,
+            document: {
+              date: Date.now(),
+              sessionId,
+              connectionId,
+              message: data.toString(),
+            },
+          });
+        } catch (dbError) {
+          Logger.error({
+            message: "shell-event-logging-error",
+            metadataToLog: { sessionId, dbError },
+          });
+        }
       }
     })
   );
 
   this.spawnedShellsBySessionId[sessionId].on(
     "close",
-    Meteor.bindEnvironment((code) => {
+    Meteor.bindEnvironment(async (code) => {
       // show ended message in codemirror
-      Database.create({
-        type: Database.types.ShellCommands,
-        document: {
-          date: Date.now(),
-          connectionId,
-          sessionId,
-          message: `shell closed ${code.toString()}`,
-        },
-      });
+      try {
+        await Database.create({
+          type: Database.types.ShellCommands,
+          document: {
+            date: Date.now(),
+            connectionId,
+            sessionId,
+            message: `shell closed ${code.toString()}`,
+          },
+        });
+      } catch (dbError) {
+        Logger.error({
+          message: "shell-event-logging-error",
+          metadataToLog: { sessionId, dbError },
+        });
+      }
 
       this.spawnedShellsBySessionId[sessionId] = null;
       Meteor.setTimeout(async () => {
@@ -100,21 +128,21 @@ const setEventsToShell = function (connectionId, sessionId) {
 };
 
 MongoDBShell.prototype = {
-  connectToShell({ connectionId, username, password, sessionId }) {
-    const connection = Database.readOne({
+  async connectToShell({ connectionId, username, password, sessionId }) {
+    const connection = await Database.readOne({
       type: Database.types.Connections,
       query: { _id: connectionId },
     });
 
     try {
       if (!this.spawnedShellsBySessionId[sessionId]) {
-        const connectionUrl = Connection.getConnectionUrl(
+        const connectionUrl = await Connection.getConnectionUrl(
           connection,
           username,
           password,
           true
         );
-        const mongoPath = MongoDBHelper.getProperBinary("mongo");
+        const mongoPath = await MongoDBHelper.getProperBinary("mongo");
         Logger.debug({
           message: "shell",
           metadataToLog: { mongoPath, connectionUrl, sessionId },
@@ -155,7 +183,7 @@ MongoDBShell.prototype = {
     });
   },
 
-  executeShellCommand({
+  async executeShellCommand({
     command,
     connectionId,
     username,
@@ -167,7 +195,7 @@ MongoDBShell.prototype = {
       metadataToLog: { sessionId, command, connectionId },
     });
     if (!this.spawnedShellsBySessionId[sessionId])
-      this.connectToShell({ connectionId, username, password, sessionId });
+      await this.connectToShell({ connectionId, username, password, sessionId });
     if (this.spawnedShellsBySessionId[sessionId])
       this.spawnedShellsBySessionId[sessionId].stdin.write(`${command}\n`);
   },

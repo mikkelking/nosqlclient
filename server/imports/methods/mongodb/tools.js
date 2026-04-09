@@ -2,44 +2,44 @@ import { Meteor } from 'meteor/meteor';
 import { MongoDBShell, MongoDB, MongoDBBackup, MongoDBUser } from '/server/imports/core';
 
 Meteor.methods({
-  clearShell({ sessionId }) {
-    MongoDBShell.clearShell({ sessionId });
+  async clearShell({ sessionId }) {
+    await MongoDBShell.clearShell({ sessionId });
   },
 
-  executeShellCommand({ command, connectionId, username, password, sessionId }) {
-    MongoDBShell.executeShellCommand({ command, connectionId, username, password, sessionId });
+  async executeShellCommand({ command, connectionId, username, password, sessionId }) {
+    await MongoDBShell.executeShellCommand({ command, connectionId, username, password, sessionId });
   },
 
-  connectToShell({ connectionId, username, password, sessionId }) {
-    return MongoDBShell.connectToShell({ connectionId, username, password, sessionId });
+  async connectToShell({ connectionId, username, password, sessionId }) {
+    return await MongoDBShell.connectToShell({ connectionId, username, password, sessionId });
   },
 
-  analyzeSchema({ connectionId, username, password, collection, sessionId }) {
-    MongoDB.analyzeSchema({ connectionId, username, password, collection, sessionId });
+  async analyzeSchema({ connectionId, username, password, collection, sessionId }) {
+    await MongoDB.analyzeSchema({ connectionId, username, password, collection, sessionId });
   },
 
-  mongodump({ args, sessionId }) {
-    MongoDBBackup.mongodump({ args, sessionId });
+  async mongodump({ args, sessionId }) {
+    await MongoDBBackup.mongodump({ args, sessionId });
   },
 
-  mongorestore({ args, sessionId }) {
-    MongoDBBackup.mongorestore({ args, sessionId });
+  async mongorestore({ args, sessionId }) {
+    await MongoDBBackup.mongorestore({ args, sessionId });
   },
 
-  mongoexport({ args, sessionId }) {
-    MongoDBBackup.mongoexport({ args, sessionId });
+  async mongoexport({ args, sessionId }) {
+    await MongoDBBackup.mongoexport({ args, sessionId });
   },
 
-  mongoimport({ args, sessionId }) {
-    MongoDBBackup.mongoimport({ args, sessionId });
+  async mongoimport({ args, sessionId }) {
+    await MongoDBBackup.mongoimport({ args, sessionId });
   },
 
-  removeDumpLogs({ sessionId, binary }) {
-    MongoDBBackup.removeDumpLogs({ sessionId, binary });
+  async removeDumpLogs({ sessionId, binary }) {
+    await MongoDBBackup.removeDumpLogs({ sessionId, binary });
   },
 
-  getAllActions() {
-    return MongoDBUser.getAllActions();
+  async getAllActions() {
+    return await MongoDBUser.getAllActions();
   },
 
   getActionInfo({ action }) {

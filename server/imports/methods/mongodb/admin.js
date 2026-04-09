@@ -2,136 +2,136 @@ import { Meteor } from 'meteor/meteor';
 import { MongoDB } from '/server/imports/core';
 
 Meteor.methods({
-  top({ sessionId }) {
+  async top({ sessionId }) {
     const methodArray = [
       {
         executeDbAdminCommand: [{ top: 1 }, {}],
       }
     ];
 
-    return MongoDB.executeAdmin({ methodArray, sessionId });
+    return await MongoDB.executeAdmin({ methodArray, sessionId });
   },
 
-  dbStats({ sessionId }) {
+  async dbStats({ sessionId }) {
     const methodArray = [
       {
         stats: [],
       }
     ];
 
-    return MongoDB.executeAdmin({ methodArray, sessionId });
+    return await MongoDB.executeAdmin({ methodArray, sessionId });
   },
 
-  validateCollection({ collectionName, options, sessionId }) {
+  async validateCollection({ collectionName, options, sessionId }) {
     const methodArray = [
       {
         validateCollection: [collectionName, options],
       },
     ];
-    return MongoDB.executeAdmin({ methodArray, runOnAdminDB: true, sessionId });
+    return await MongoDB.executeAdmin({ methodArray, runOnAdminDB: true, sessionId });
   },
 
-  serverStatus({ sessionId }) {
+  async serverStatus({ sessionId }) {
     const methodArray = [
       {
         serverStatus: [],
       },
     ];
-    return MongoDB.executeAdmin({ methodArray, runOnAdminDB: true, sessionId });
+    return await MongoDB.executeAdmin({ methodArray, runOnAdminDB: true, sessionId });
   },
 
-  serverInfo({ sessionId }) {
+  async serverInfo({ sessionId }) {
     const methodArray = [
       {
         serverInfo: [],
       },
     ];
-    return MongoDB.executeAdmin({ methodArray, runOnAdminDB: true, sessionId });
+    return await MongoDB.executeAdmin({ methodArray, runOnAdminDB: true, sessionId });
   },
 
-  replSetGetStatus({ sessionId }) {
+  async replSetGetStatus({ sessionId }) {
     const methodArray = [
       {
         replSetGetStatus: [],
       },
     ];
-    return MongoDB.executeAdmin({ methodArray, runOnAdminDB: true, sessionId });
+    return await MongoDB.executeAdmin({ methodArray, runOnAdminDB: true, sessionId });
   },
 
-  removeUser({ username, runOnAdminDB, sessionId }) {
+  async removeUser({ username, runOnAdminDB, sessionId }) {
     const methodArray = [
       {
         removeUser: [username],
       },
     ];
 
-    return MongoDB.executeAdmin({ methodArray, runOnAdminDB, sessionId });
+    return await MongoDB.executeAdmin({ methodArray, runOnAdminDB, sessionId });
   },
 
-  ping({ sessionId }) {
+  async ping({ sessionId }) {
     const methodArray = [
       {
         ping: []
       }
     ];
-    return MongoDB.executeAdmin({ methodArray, runOnAdminDB: true, sessionId });
+    return await MongoDB.executeAdmin({ methodArray, runOnAdminDB: true, sessionId });
   },
 
-  listDatabases({ sessionId }) {
+  async listDatabases({ sessionId }) {
     const methodArray = [
       {
         listDatabases: []
       }
     ];
-    return MongoDB.executeAdmin({ methodArray, runOnAdminDB: true, sessionId });
+    return await MongoDB.executeAdmin({ methodArray, runOnAdminDB: true, sessionId });
   },
 
-  command({ command, runOnAdminDB, options, sessionId }) {
+  async command({ command, runOnAdminDB, options, sessionId }) {
     const methodArray = [
       {
         command: [command, options],
       },
     ];
-    return MongoDB.executeAdmin({ methodArray, runOnAdminDB, sessionId });
+    return await MongoDB.executeAdmin({ methodArray, runOnAdminDB, sessionId });
   },
 
-  addUser({ username, password, options, runOnAdminDB, sessionId }) {
+  async addUser({ username, password, options, runOnAdminDB, sessionId }) {
     const methodArray = [
       {
         addUser: [username, password, options]
       },
     ];
-    return MongoDB.executeAdmin({ methodArray, runOnAdminDB, sessionId });
+    return await MongoDB.executeAdmin({ methodArray, runOnAdminDB, sessionId });
   },
 
-  buildInfo({ sessionId }) {
+  async buildInfo({ sessionId }) {
     const methodArray = [
       {
         buildInfo: []
       },
     ];
-    return MongoDB.executeAdmin({ methodArray, runOnAdminDB: true, sessionId });
+    return await MongoDB.executeAdmin({ methodArray, runOnAdminDB: true, sessionId });
   },
 
-  dropDB({ sessionId }) {
+  async dropDB({ sessionId }) {
     const methodArray = [
       {
         dropDatabase: []
       }
     ];
-    return MongoDB.executeAdmin({ methodArray, sessionId });
+    return await MongoDB.executeAdmin({ methodArray, sessionId });
   },
 
-  dropAllCollections({ sessionId }) {
-    return MongoDB.dropAllCollections({ sessionId });
+  async dropAllCollections({ sessionId }) {
+    return await MongoDB.dropAllCollections({ sessionId });
   },
 
-  createCollection({ collectionName, options, sessionId }) {
+  async createCollection({ collectionName, options, sessionId }) {
     const methodArray = [
       {
         createCollection: [collectionName, options]
       }
     ];
-    return MongoDB.executeAdmin({ methodArray, sessionId, removeCollectionTopology: true });
+    return await MongoDB.executeAdmin({ methodArray, sessionId, removeCollectionTopology: true });
   }
 });

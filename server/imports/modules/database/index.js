@@ -12,35 +12,34 @@ const Database = function Database() {
   };
 };
 
-const resolveType = function (type) {
-  if (Object.prototype.toString.call(type) === "[object String]")
-    return this.types[type];
+const resolveType = function (types, type) {
+  if (Object.prototype.toString.call(type) === "[object String]") return types[type];
   return type;
 };
 
 Database.prototype = {
   async create({ type, document }) {
-    return await resolveType(type).insertAsync(document);
+    return await resolveType(this.types, type).insertAsync(document);
   },
 
   async read({ type, query, queryOptions = {} }) {
-    return await resolveType(type).find(query, queryOptions).fetchAsync();
+    return await resolveType(this.types, type).find(query, queryOptions).fetchAsync();
   },
 
   async readOne({ type, query, queryOptions = {} }) {
-    return await resolveType(type).findOneAsync(query, queryOptions);
+    return await resolveType(this.types, type).findOneAsync(query, queryOptions);
   },
 
   async count({ type, query, queryOptions = {} }) {
-    return await resolveType(type).find(query, queryOptions).countAsync();
+    return await resolveType(this.types, type).find(query, queryOptions).countAsync();
   },
 
   async updateAsync({ type, selector, modifier, options = {} }) {
-    return await resolveType(type).updateAsync(selector, modifier, options);
+    return await resolveType(this.types, type).updateAsync(selector, modifier, options);
   },
 
   async removeAsync({ type, selector }) {
-    return await resolveType(type).removeAsync(selector);
+    return await resolveType(this.types, type).removeAsync(selector);
   },
 
   // aliases
